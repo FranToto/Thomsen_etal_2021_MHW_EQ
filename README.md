@@ -1,11 +1,11 @@
 # Thomsen_etal_2021_MHW_EQ
 Methodology in support of Thomsen, et al., 2021, Cascading impacts of earthquakes and extreme heatwaves have destroyed populations of an iconic marine foundation species - submitted to Diversity and Distributions, under review 
 
-# Code and Analysis:
+## Code and Analysis
 Spatial_Analysis_Methods.Rmd
 Published in RPubs: https://rpubs.com/FranToto/Thomsen2021_MHW
 
-# Data:
+## Data
 ne_10m_coastline.shp
 ne_10m_coastline.cpg
 ne_10m_coastline.dbf
