@@ -1,0 +1,486 @@
+---
+title: "Methodology for Spatial Analysis in Thomsen et al. (2021)"
+author: "Francois Thoral"
+date: "26/02/2021"
+output: html_document
+bibliography: bibliography.bib
+---
+
+__AIM__ : Task #1 - Estimate distance to shore for various spatial points (Extreme Events: EQ and VA).
+Task #2 - To Calculate/estimate attributes for 17-18 NZ MHW using same methodology as @Gupta2020 and @Holbrook2019.
+Task #3 - Calculate the length of coastline embedded in MHW polygons (62 + NZ 17/18 created).
+
+
+# Table of content
+
+1. [Task #1: Calculate distance to shore](#Dshore)
+  
+2. [Task #2: Calculate/estimate attributes for 17-18 NZ MHW using same methodology as Gupta2020](#NZMHW)
+    
+    * [Most Extreme MHW Events around NZ](#extreme)
+    * [Select Polygon best representing NZ 17/18 MHW event](#poly)
+    * [MHW Start/End Date 17/18](#dates)
+    * [Stats for 17/18 MHW](#stats)
+    * [Peak Day in 17/18](#peak)
+  
+3. [Task #3: Calculate the length of coastline embedded in MHW polygons](#PolyCoast)
+
+4. [Bibliography](#Biblio)  
+  
+# R Packages
+
+```{r setup, include=T,warning=F}
+knitr::opts_chunk$set(echo = TRUE)
+library(raster)
+library(sf)
+library(tidyverse)
+library(readxl)
+library(RColorBrewer)
+library(heatwaveR)
+library(knitr)
+library(units)
+library(plotly)
+library(leaflet)
+library(leafem)
+library(leafgl)
+```
+  
+  
+# Task #1: Calculate distance to shore - data from NOAA- Updated <a name="Dshore"></a>
+
+We use the distance to shore dataset fron NOAA (https://data.noaa.gov/dataset/dataset/distance-to-nearest-coastline-0-01-degree-grid2) and extract the values at the spatial point locations using the raster:: [@raster] and sf:: [@sf] packages. The tidyverse [@tidyverse] ecosystem of packages is also central here.
+
+```{r, warning=F, eval=F}
+## Distance from NOAA
+distance_noaa <- raster('GMT_intermediate_coast_distance_01d.tif')
+##
+
+## Read excel file containing spatial points
+coords <- read_excel('62 extreme mhw boundaries and other events.xlsx',
+                     sheet='Event dis-to-coast')
+
+# Need to transform points in coords to actual sf points
+coords_noNA <- coords %>% drop_na() #Drop row containing na (only 1)
+coords_sf <- st_as_sf(as.data.frame(coords_noNA)[,1:3],
+                      coords = c('LONGITUDE','LATITUDE'),crs = crs(distance_noaa))
+##
+
+## Extract distance values at points, tidy
+distance_noaa_points <- raster::extract(distance_noaa,coords_sf)
+
+distance_noaa_points_tidy <- cbind('MT ID'=coords_sf$`MT ID`,
+                                   Distance_km=distance_noaa_points) %>% as_tibble()
+
+coords2 <- full_join(coords,distance_noaa_points_tidy,by='MT ID') %>% 
+  dplyr::select(-4) %>% mutate(Distance_km_pos = abs(Distance_km))
+
+write_csv(coords2,path = 'Event_dis_to_Coast_Filled_NOAA_01d.csv',col_names = T)
+``` 
+
+```{r, warning=F}
+coords2 <- read_csv('Event_dis_to_Coast_Filled_NOAA_01d.csv') %>% 
+  dplyr::select(-4)
+
+kable(head(coords2,n=10),caption = 'Distance to shore (km) for the first 10 spatial points')
+```  
+
+And let's summarise the amount of events in the 0-15, 15-30, 30-50, 50-100 and >100km from coastline.
+
+```{r, warning=F}
+num_event_dist <- coords2 %>% mutate(categories = cut(Distance_km_pos,
+                                                      breaks=c(0,15,30,50,100,2495),include.lowest=T)) %>%  
+  group_by(categories) %>% tally()
+
+kable(num_event_dist,caption = 'Number of events with distance to Shore (km).')
+```  
+
+# Task #2: Calculate/estimate attributes for 17-18 NZ MHW using same methodology as @Gupta2020 <a name="NZMHW"></a>
+
+### Data and Methodology for MHW event detection
+
+Data - Downloading and Preparing NOAA OISST Data
+By Robert W Schlegel and AJ Smit
+From https://robwschlegel.github.io/heatwaveR/articles/OISST_preparation.html
+
+```{r, warning=F, eval=F}
+library(tidync) # For easily dealing with NetCDF data
+library(rerddap) # For easily downloading subsets of data
+
+# The information for the NOAA OISST data
+rerddap::info(datasetid = "ncdcOisst21Agg", url = "https://coastwatch.pfeg.noaa.gov/erddap/")
+# Note that we use the dataset version with lon values from 0 yo 360
+
+# Download function, cf https://robwschlegel.github.io/heatwaveR/articles/OISST_preparation.html
+OISST_sub_dl_wider <- function(time_df){
+  OISST_dat <- griddap(x = "ncdcOisst21Agg", 
+                       url = "https://coastwatch.pfeg.noaa.gov/erddap/", 
+                       time = c(time_df$start, time_df$end), 
+                       zlev = c(0, 0),
+                       latitude = c(-30, -55),
+                       longitude = c(150, 190),
+                       fields = "sst")$data %>% 
+    mutate(time = as.Date(stringr::str_remove(time, "T00:00:00Z"))) %>% 
+    dplyr::rename(t = time, temp = sst) %>% 
+    select(lon, lat, t, temp) %>% 
+    na.omit()
+}
+
+# Years of interest, we need to subset in smaller time interval 
+# as explained in https://robwschlegel.github.io/heatwaveR/articles/OISST_preparation.html
+dl_years <- data.frame(date_index = 1:5,
+                       start = as.Date(c("1982-09-01", "1990-01-01",
+                                         "1998-01-01", "2006-01-01", "2014-01-01")),
+                       end = as.Date(c("1989-12-31", "1997-12-31",
+                                       "2005-12-31", "2013-12-31", "2020-12-01")))
+
+# Consider increasing the R memory limit as dataset could get quite heavy
+#memory.limit(size = 35000)  
+
+# Download part
+OISST_data <- dl_years %>% 
+    group_by(date_index) %>% 
+    group_modify(~OISST_sub_dl_wider(.x)) %>% 
+    ungroup() %>% 
+    select(lon, lat, t, temp)
+
+# Save as RDS file on disk
+saveRDS(OISST_data, file = "OISST_vignette_NZWiderArea.Rds")
+```
+
+Event Detection - Uses heatwaveR:: [@heatwaver], translation of GitHub python functions from Eric C.J. Oliver (published in paper @Holbrook2019 A global assessment of marine heatwaves and their drivers)
+https://robwschlegel.github.io/heatwaveR/articles/gridded_event_detection.html
+
+```{r, warning=F, eval=F}
+OISST_wider <- readRDS("OISST_vignette_NZWiderArea.Rds")
+
+event_only <- function(df){
+  # First calculate the climatologies
+  clim <- ts2clm(data = df, climatologyPeriod = c("1983-01-01", "2012-12-31"))
+  # Then the events
+  event <- detect_event(data = clim)
+  # Return only the event metric dataframe of results
+  return(event$event)
+}
+
+# First we start by choosing the 'OISST' dataframe
+MHW_wider_dplyr <- OISST_wider %>% 
+  # Then we group the data by the 'lon' and 'lat' columns
+   group_by(lon, lat) %>% 
+  # Then we run our MHW detecting function on each group
+  group_modify(~event_only(.x))
+
+# Save Dataset of MHW Events on Disk
+write_csv(MHW_wider_dplyr,'MHW_Events_NZ_wider.csv')
+```
+
+##  Most Extreme MHW Events around NZ <a name="extreme"></a>
+
+The file MHW_Events_NZ_wider.csv is the output of the function event_only() from Robert W Schlegel and AJ Smit, used on data OISST around NZ (lat(-30, -55),lon(150, 190)) and using climatologyPeriod = c("1982-01-01", "2012-12-31")
+
+Let's keep now the years with the longest (using column 'duration') and the most intense (using column 'intensity_cumulative') at every pixel. Let's see if we can denote an area around NZ for the 17/18 MHW. And if so, is it best described by its duration and by its cumulative intensity compared to other MHW events. 
+
+```{r, warning=F, eval=F}
+MHW_result_wider <- read_csv('MHW_Events_NZ_wider.csv')
+
+most_extreme_MHW_year_intensity <- MHW_result_wider %>% 
+  mutate(year = lubridate::year(date_peak)) %>% 
+  group_by(lon, lat, year) %>%
+  summarise(max_intensity = max(intensity_cumulative)) %>% 
+  dplyr::filter(max_intensity==max(max_intensity))
+
+write_csv(most_extreme_MHW_year_intensity,'most_extreme_MHW_year_intensity_wider.csv')
+```
+
+
+```{r, fig.cap="Year of Most Intense MHW events around New Zealand.", warning=F}
+# Here we just load the resulting dataframes
+most_extreme_MHW_year_intensity <- read_csv('most_extreme_MHW_year_intensity_wider.csv')
+
+## Plot
+# Custom colour legend, similar to fig 5 in Gupta et al., 2020.
+pal <- c(brewer.pal(9,'Purples'),brewer.pal(9,'Blues'),
+         brewer.pal(9,'Oranges'),brewer.pal(9,'Reds'),brewer.pal(3,'Greens'))
+
+p_intensity <- ggplot(most_extreme_MHW_year_intensity, aes(x = lon, y = lat)) +
+  geom_raster(aes(fill = year), interpolate = FALSE) +
+  ggtitle(' Year of Most Intense MHW events') +
+  scale_fill_gradientn(colours=pal) + 
+  borders('world2',xlim=c(150,190),ylim=c(-55,-30)) + xlim(c(150,190)) + ylim(c(-55,-30))
+ggplotly(p_intensity) 
+```
+The years 2017 (light green) and 2018 (dark red) really stand out by their extent in terms of extreme events.
+
+## Select Polygon best representing NZ 17/18 MHW event <a name="poly"></a>
+
+As per in @Gupta2020, we manually select the region which contains the largest near-contiguous area of the most severe/largest cumulative intensity MHW occuring at almost the same time (in our case, the peak date is in 2017 or 2018) 
+
+
+```{r, fig.cap="Most intense MHW events with peak dates in 2017 or 2018 and polygon of near-continuous area of the largest cumulative intensity MHW occuring at almost the same time.", warning=F}
+most_extreme_MHW_intensity_1718 <- most_extreme_MHW_year_intensity %>%
+  dplyr::filter(year%in%c(2017,2018))  
+
+
+## Let's "hand-draw" a polygon
+poly_lon <- c(150,155,190,190,173,155)
+poly_lat <- c(-50,-55,-55,-40,-37,-40)
+poly_coords <- cbind(poly_lon,poly_lat) %>% as_tibble()
+poly_NZ <- sp::Polygon(poly_coords)
+poly_NZ_sp <- sp::SpatialPolygons(list(sp::Polygons(list(poly_NZ),ID = "63_NZ")))
+proj4string(poly_NZ_sp) = CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
+poly_NZ_sf <- st_as_sf(poly_NZ_sp)
+##
+
+p_intensity_1718 <- ggplot() + geom_sf(data=poly_NZ_sf,aes(alpha=0.1)) +
+  geom_raster(data=most_extreme_MHW_intensity_1718,aes(x=lon,y=lat,fill=year))+ 
+  ggtitle(' Year of Most Intense MHW events') + 
+  borders('world2',xlim=c(150,190),ylim=c(-55,-30)) + xlim(c(150,190)) + ylim(c(-55,-30))
+ggplotly(p_intensity_1718)
+```
+
+
+### 2017/2018 extreme NZ MHW event attributes  
+
+Here we calculate the attributes of the 17/18 MHW as per @Gupta2020 method.
+
+Proportion of region 63 in MHW condition: Proportion of pixels above SSTA >1 (and >2) within region 63.
+
+Maximum area S>2 (and 1) (M km2): Maximum contiguous area with severity >2 (and >1) that intersects region 63.
+
+Maximum Intensity S>2 (and >1) (degC M km2): Maximum areal intensity over the course of the MHW = spatial integral of SSTA over area with the largest continuous MHZ with severity >2 (and >1) that intersects region 63.
+
+Core Date Range (Start/Peak/End Dates): Dates of the core MHW when intensity and area of contiguous MHW and a large fraction of the region is experiencing a MHW (severity>2, these dates are manually selected based on procedure described in the Methods section)
+
+To get these, we have to download the daily Sea Surface Temperature Anomalies (SSTA). We download the data in a wider Pacific Ocean zone from 2017-10-01 to 2018-07-31 and between lat(+30$^{\circ}$,-55$^{\circ}$) and lon(120$^{\circ}$,320$^{\circ}$).
+
+```{r, warning=F, eval=F}
+## Get SSTA for region 63 (Event around NZ) and for year 2017-2018 - WIDER ZONE
+# Goal is to get attributes for region 63 using Gupta method
+rerddap::info(datasetid = "ncdcOisst21Agg", url = "https://coastwatch.pfeg.noaa.gov/erddap/")
+
+OISST_sub_dl_region63_wider <- function(time_df){
+  OISST_dat <- griddap(x = "ncdcOisst21Agg", 
+                       url = "https://coastwatch.pfeg.noaa.gov/erddap/", 
+                       time = c(time_df$start, time_df$end), 
+                       zlev = c(0, 0),
+                       latitude = c(30, -55),
+                       longitude = c(120, 320),
+                       fields = "anom")$data %>% 
+    mutate(time = as.Date(stringr::str_remove(time, "T00:00:00Z"))) %>% 
+    dplyr::rename(t = time) %>% 
+    select(lon, lat, t, anom) %>% 
+    na.omit()
+}
+
+dl_years <- data.frame(date_index = 1,
+                       start = as.Date(c("2017-10-01")),
+                       end = as.Date(c("2018-07-31")))
+
+OISST_wider <- dl_years %>% 
+    group_by(date_index) %>% 
+    group_modify(~OISST_sub_dl_region63_wider(.x)) %>% 
+    ungroup() %>% 
+    dplyr::select(lon, lat, t, anom)
+
+saveRDS(OISST_wider, file = "OISSTA_vignette_Region63_wider.Rds")
+```
+
+Once we get the SSTA daily data in the wider zone, we calculate the size of the biggest contiguous area in MHW conditions intersecting the polygon 63 (NZ, estimated in previous part). 
+
+```{r, warning=F, eval=F}
+OISST_wider <- readRDS("OISSTA_vignette_Region63_wider.Rds")
+
+# Raster grid and area of pixels (using raster::area())
+ras_grid <- raster(vals=NA,xmn=120,xmx=320,ymn=-55,ymx=30,resolution=0.25,
+            crs=CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"))
+area_grid_ras <- area(ras_grid) #This raster contains the area (km2) contained in each lon/lat pixels
+
+# Function to calculate size and area of biggest clump intersecting polygon (region)
+Size_Intensity_OverlappingClump <- function(data,raster_grid,region){
+  #data: sf containing date, anom, area$value
+  #raster_grid: grid to calculate size of clump, should be same dimension than gridded data
+  #region: polygon of region to calculate biggest clump intersecting with
+  
+  raster_date <- rasterize(data,raster_grid,field=data$anom)
+  raster_date_clump <- clump(raster_date)
+  clump_sp <- as(raster_date_clump, "SpatialPointsDataFrame")
+  clump_sf <- st_as_sf(clump_sp)
+  clumps_sf_sum <- st_intersection(data,clump_sf) %>% group_by(clumps) %>% 
+    summarise(size_clump=sum(area$value,na.rm=T),IntensityClump=sum(anom*area$value,na.rm=T))
+  # Intersect clumps with polygon region 
+  clumps_sf_sum_touch <- st_intersection(clumps_sf_sum,region)
+ res_tibble <- cbind(size_clump=max(clumps_sf_sum_touch$size_clump,na.rm=T),
+                     intensity_clump =max(clumps_sf_sum_touch$IntensityClump,na.rm=T)) %>% as_tibble()
+  return(res_tibble)
+}
+
+# Area where S>2 and intersect polygon 28
+cells_anom2plus <- OISST_wider %>% dplyr::filter(anom>2)
+cells_anom2plus_sf <- st_as_sf(cells_anom2plus,coords=c('lon','lat'),
+                      crs=CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"))
+cells_anom2plus_sf$area <- extract(area_grid_ras,cells_anom2plus_sf) %>% as_tibble()
+
+clump_stats_s2 <- cells_anom2plus_sf %>% group_by(t) %>%  
+    group_modify(~Size_Intensity_OverlappingClump(.x,ras_grid,poly_NZ_sf))
+
+# Area where S>1 and intersect polygon 28
+cells_anom1plus <- OISST_wider %>% dplyr::filter(anom>1)
+cells_anom1plus_sf <- st_as_sf(cells_anom1plus,coords=c('lon','lat'),
+                      crs=CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"))
+
+cells_anom1plus_sf$area <- extract(area_grid_ras,cells_anom1plus_sf) %>% as_tibble()
+
+clump_stats_s1 <- cells_anom1plus_sf %>% group_by(t) %>%  
+    group_modify(~Size_Intensity_OverlappingClump(.x,ras_grid,poly_NZ_sf))
+
+## Merge S1 - S2 stats
+clump_stats_s1_c <- clump_stats_s1 %>% 
+  rename(Date=t,Size_max_S1=size_clump,Intensity_max_S1=intensity_clump)
+clump_stats_s2_c <- clump_stats_s2 %>% 
+  rename(Date=t,Size_max_S2=size_clump,Intensity_max_S2=intensity_clump)
+clump_stats_merge <- inner_join(clump_stats_s1_c,clump_stats_s2_c)
+
+clump_stats_merge_tidy <- clump_stats_merge %>% pivot_longer(
+  -Date,
+  names_to = c(".value", "Severity"),
+  names_sep = "_max_"
+) %>% group_by(Severity)
+
+# Save on disk
+write_csv(clump_stats_merge_tidy,'Area_MaxInten_ContiguousRegion_IntersRegion63.csv')
+```
+
+## MHW Start/End Date 17/18 <a name="dates"></a>
+
+```{r, fig.cap="Contiguous area experiencing MHW conditions overlapping region 63 (km2).", warning=F}
+# File containing ratio of pixels within polygon in MHW condition (Sev>1) and Sev>2.
+clump_stats_merge_tidy <- read_csv('Area_MaxInten_ContiguousRegion_IntersRegion63.csv')
+#
+
+p_size <- ggplot(data=clump_stats_merge_tidy) + geom_line(aes(Date,Size,color=Severity)) +
+  ggtitle('Contiguous area experiencing MHW conditions overlapping Region 63') +
+  scale_color_manual(values = c(S1 = "blue", S2 = "red")) +
+  ylab('Area (km2)') + xlab('Time') + 
+  geom_vline(aes(xintercept=as.numeric(as.Date('2017-11-15'))), linetype=4) +
+  geom_vline(aes(xintercept=as.numeric(as.Date('2018-04-14'))), linetype=4)
+ggplotly(p_size)
+```
+
+
+```{r, fig.cap="Intensity of continuous area in MHW conditions overlapping Region 63 (deg C km2).", warning=F}
+
+p_int <- ggplot(data=clump_stats_merge_tidy) + geom_line(aes(Date,Intensity,color=Severity)) +
+  ggtitle('Intensity of continuous area in MHW conditions overlapping Region 63') +
+  scale_color_manual(values = c(S1 = "blue", S2 = "red")) +
+  ylab('Intensity (degC.km2)') + xlab('Time') + 
+  geom_vline(aes(xintercept=as.numeric(as.Date('2017-11-15'))), linetype=4) +
+  geom_vline(aes(xintercept=as.numeric(as.Date('2018-04-14'))), linetype=4)
+ggplotly(p_int)
+```
+
+
+These last 2 plots are similar to the Figure S12 b)-c) in @Gupta2020 Supp Info. Vertical lines are manually identified period of core MHW, when all metrics are high. The core date range is 2017-11-15 to 2018-04-14. 
+
+## Stats for 17/18 MHW <a name="stats"></a>
+
+We can now summarise the attributes of the 17/18 MHW events.
+
+```{r, warning=F}
+stats <- clump_stats_merge_tidy %>%
+  group_by(Severity) %>% dplyr::filter(Size==max(Size)|Intensity==max(Intensity))
+
+kable(stats
+      ,caption = 'Maximum Area (km2) and Intensity (degC km2) for 
+      Severity >1 and >2 as well as their associated date peak.')
+``` 
+
+The max Intensity for Severity >2 is 15.8 degC M km2 and happened the 28/01/2018. It makes the 17/18 MHW event the 5th strongest ever recorded since 1982 according to @Gupta2020 Table 1.
+
+
+## Peak Day in 17/18 <a name="peak"></a>
+Here we show the SSTA > 1$^{\circ}$C on the peak date 27/01/2018. Note the extensive region experiencing MHW condition as well as the highest intensity in the Tasman Sea.
+
+```{r, fig.cap="SSTA (>1, in degC) at the peak date of the 17/18 MHW (27/01/2018).", warning=F}
+OISSTA_date <- read_csv('OISSTA_27_01_18_Sup1.csv')
+
+p <- OISSTA_date %>% 
+  ggplot() +
+  geom_raster(aes(x = lon, y = lat,fill = anom)) +
+  scale_fill_viridis_c() +
+  coord_quickmap(expand = F) +
+  xlab('lon') + ylab('lat') +
+  geom_sf(data=poly_NZ_sf,aes(alpha=0.1)) + 
+  borders('world2') + xlim(c(120,320)) + ylim(-55,30) + 
+  labs(x = NULL, y = NULL, fill = "SSTA (°C)") +
+  theme(legend.position = "bottom")
+p
+
+```
+
+
+
+# Task #3: Calculate the length of coastline embedded in MHW polygons<a name="PolyCoast"></a>
+
+We merge the new polygon 63 with the 62 other ones. Then we calculate the intersection between the 63 polygons with the coastline 10m resolution, from https://www.naturalearthdata.com/downloads/10m-physical-vectors/10m-coastline/ using sf::st_intersection().
+
+
+```{r, fig.cap="Figure 5 - Intersection between coastline and polygons.", warning=F}
+poly_NZ_sf$eMHW_No <- 63
+polys_merged <- st_read('62MHWPolygons_tidy.shp')
+polys_merged <- rbind(polys_merged,poly_NZ_sf)
+coastline_10 <- st_read('ne_10m_coastline.shp')
+
+poly_points <- read_excel('62 extreme mhw boundaries and other events.xlsx',sheet='eMHW polygons (2)')
+poly_points_sf <- st_as_sf(as.data.frame(poly_points)[,2:4],coords = c('x Long','y Lat'),crs = crs(coastline_10))
+
+intersect <- st_intersection(polys_merged,coastline_10)
+
+m <- leaflet() %>% setView(lng = 175, lat = -36.5, zoom = 4) %>%
+  addTiles()  %>%# Print the map
+  addScaleBar(position = "bottomright",options = scaleBarOptions(imperial=F)) %>%
+  addGlPoints(data = poly_points_sf, group = "pts",popup = poly_points_sf$'eMHW No.') %>% 
+  addPolylines(data=intersect,color = "#444444", weight = 1, smoothFactor = 0.5,
+               opacity = 1.0, fillOpacity = 0.5,
+               #fillColor = ~colorQuantile("YlOrRd", Source)(Source),
+               popup = intersect$eMHW_No,
+               highlightOptions = highlightOptions(color = "white", weight = 2,
+                                                   bringToFront = TRUE),group='Intersection Coastline') %>% 
+  addPolygons(data=polys_merged,opacity = 1.0, fillOpacity = 0.5,popup = ~eMHW_No,
+              highlightOptions = highlightOptions(color = "white", weight = 2,
+                                                  bringToFront = TRUE),group='Polygons') %>% 
+  addLayersControl(
+    overlayGroups = c('Polygons',"Intersection Coastline"), #together groups
+    options = layersControlOptions(collapsed = FALSE)
+  )
+m
+
+```
+
+Finally, we calculate the length of the intersected coastline using sf::st_length().
+
+```{r, warning=F}
+#poly_NZ_sf$eMHW_No <- 63
+#polys_merged <- st_read('62MHWPolygons_tidy.shp')
+#polys_merged <- rbind(polys_merged,poly_NZ_sf)
+#coastline_10 <- st_read('ne_10m_coastline.shp')
+
+#poly_points <- read_excel('62 extreme mhw boundaries and other events.xlsx',sheet='eMHW polygons (2)')
+#poly_points_sf <- st_as_sf(as.data.frame(poly_points)[,2:4],coords = c('x Long','y Lat'),crs = crs(coastline_10))
+
+#intersect <- st_intersection(polys_merged,coastline_10)
+
+length_coast_overlap <- st_length(intersect) %>% drop_units() %>% as_tibble()
+length_coast_overlap_tidy <- cbind(eMHW_No=intersect$eMHW_No,length_coast_overlap) %>% 
+  as_tibble() %>% group_by(eMHW_No) %>% 
+  summarise(Length_Coast_Sum = sum(value)) %>% 
+  mutate(Length_Coast_km = Length_Coast_Sum/1000) %>% 
+  dplyr::select(-2) %>% rename(ID=eMHW_No)
+
+kable(length_coast_overlap_tidy,caption = 'Length of coastline (km) intersecting with polygons.')
+```
+
+And that's pretty much it!
+
+
+# Bibliography <a name="Biblio"></a>
+
+
