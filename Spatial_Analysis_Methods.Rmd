@@ -1,7 +1,7 @@
 ---
 title: "Methodology for Spatial Analysis in Thomsen et al. (2021)"
 author: "Francois Thoral"
-date: "26/02/2021"
+date: "21/07/2021"
 output: html_document
 bibliography: bibliography.bib
 ---
