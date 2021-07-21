@@ -408,8 +408,12 @@ p <- OISSTA_date %>%
   scale_fill_viridis_c() +
   coord_quickmap(expand = F) +
   xlab('lon') + ylab('lat') +
-  geom_sf(data=poly_NZ_sf,aes(alpha=0.1)) + 
-  borders('world2') + xlim(c(120,320)) + ylim(-55,30) + 
+  #geom_sf(data=poly_NZ_sf,aes(alpha=0.1)) + 
+  borders('world2',fill='grey') + 
+  #xlim(c(120,320)) + ylim(-55,30) + 
+  coord_fixed(xlim = c(120,320),  ylim = c(-55,30)) +
+  geom_sf(data=poly_NZ_sf,alpha=0.1) + 
+  coord_sf(xlim = c(120,320), ylim = c(-55,30)) +
   labs(x = NULL, y = NULL, fill = "SSTA (°C)") +
   theme(legend.position = "bottom")
 p
@@ -475,8 +479,26 @@ length_coast_overlap_tidy <- cbind(eMHW_No=intersect$eMHW_No,length_coast_overla
   mutate(Length_Coast_km = Length_Coast_Sum/1000) %>% 
   dplyr::select(-2) %>% rename(ID=eMHW_No)
 
+# Percentage of coastline impacted by extreme MHW events
+# Distance of coastline is "fractal", so dependant of the scale it is measured. Caclulating the percentage of coastline impacted by MHW compared to global lenght of coastline (from NOAA coastline dataaset) is more then more informative.
+
 kable(length_coast_overlap_tidy,caption = 'Length of coastline (km) intersecting with polygons.')
 ```
+What percentage of the worlds coastline has been impacted by extreme Marine Heatwave events?
+
+```{r, warning=F}
+length_coastline_impacted <- length_coast_overlap_tidy %>% summarise(sum(Length_Coast_km))
+
+total_length_coastline <- coastline_10 %>% st_length() %>% 
+  drop_units() %>% #in meters
+  as_tibble() %>% 
+  summarise(sum(value/1000)) #in km
+
+paste0(round(length_coastline_impacted/total_length_coastline*100,2),"% of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ).")
+
+```
+
+`r round(length_coastline_impacted/total_length_coastline*100,2)` % of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ).
 
 And that's pretty much it!
 
