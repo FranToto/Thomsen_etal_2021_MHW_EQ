@@ -498,6 +498,8 @@ paste0(round(length_coastline_impacted/total_length_coastline*100,2),"% of the w
 
 ```
 
+`r round(length_coastline_impacted,1)` km of coastline has been impacted by the 63 extreme Marine Heatwave events.
+
 `r round(length_coastline_impacted/total_length_coastline*100,2)` % of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ).
 
 And that's pretty much it!
