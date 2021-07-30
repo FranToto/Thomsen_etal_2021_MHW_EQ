@@ -8,7 +8,7 @@ bibliography: bibliography.bib
 
 __AIM__ : Task #1 - Estimate distance to shore for various spatial points (Extreme Events: EQ and VA).
 Task #2 - To Calculate/estimate attributes for 17-18 NZ MHW using same methodology as @Gupta2020 and @Holbrook2019.
-Task #3 - Calculate the length of coastline embedded in MHW polygons (62 + NZ 17/18 created).
+Task #3 - Calculate the length of coastline embedded in MHW polygons (62 + NZ 17/18 created). Task #4 - MHW events data extraction at Oaro and Kaikoura Peninsula.
 
 
 # Table of content
@@ -25,7 +25,9 @@ Task #3 - Calculate the length of coastline embedded in MHW polygons (62 + NZ 17
   
 3. [Task #3: Calculate the length of coastline embedded in MHW polygons](#PolyCoast)
 
-4. [Bibliography](#Biblio)  
+4. [Task #4 - MHW events data extraction at Oaro and Kaikoura Peninsula](#events)
+
+5. [Bibliography](#Biblio)  
   
 # R Packages
 
@@ -503,6 +505,50 @@ paste0(round(length_coastline_impacted/total_length_coastline*100,2),"% of the w
 `r round(length_coastline_impacted/total_length_coastline*100,2)` % of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ).
 
 And that's pretty much it!
+
+# Task #4 - MHW events data extraction at Oaro and Kaikoura Peninsula <a name="events"></a>
+
+```{r, eval=F}
+## Daily OISST data in region lat(-50,-30) - lon (150,190) - between 1982-09-01 and 2020-12-01 - See Task#2 for downloading OISST_vignette_NZWiderArea.Rds
+OISST_wider <- readRDS("OISST_vignette_NZWiderArea.Rds")
+##
+
+## Detect event pixels
+event <- function(df){
+  # First calculate the climatologies
+  #clim <- ts2clm(data = df, climatologyPeriod = c("1982-01-01", "2011-01-01"))
+  clim <- ts2clm(data = df, climatologyPeriod = c("1983-01-01", "2012-12-31"))
+  # Then the events
+  event <- detect_event(data = clim)
+  # Return only the event metric dataframe of results
+  #return(event$event)
+  return(event)
+}
+
+pix_data_oaro <- OISST_wider %>% 
+  dplyr::filter(lon==173.625 & lat==-42.625)
+pix_data_kk <- OISST_wider %>% dplyr::filter(lon==173.875 & lat==-42.375)
+
+pix_event_oaro <- event(pix_data_oaro)
+pix_event_kk <- event(pix_data_kk)
+
+lolli_plot(pix_event_oaro) + ggtitle('Oaro & Goose Bay (173.625; -42.625)')
+ggsave('Lolliplot_OaroGoose.png',dpi=500)
+lolli_plot(pix_event_kk) + ggtitle('Kaikoura Peninsula (173.875; -42.375)')
+ggsave('Lolliplot_KK.png',dpi=500)
+
+## Save Event Detection Data
+write_csv(pix_event_oaro$event,'MHW_Events_Oaro_GooseBay.csv')
+write_csv(pix_event_kk$event,'MHW_Events_KaikouraPeninsula.csv')
+##
+```
+```{r image_grobs, fig.show = "hold", out.width = "50%", fig.align = "default", fig.cap="Figure 6 - Maximum intensity (in degC) of marine heatwave events (at peak date) at Kaikoura Peninsula and Oaro reefs since 1982."}
+
+knitr::include_graphics("Lolliplot_KK.png")
+
+knitr::include_graphics("Lolliplot_OaroGoose.png")
+
+```
 
 
 # Bibliography <a name="Biblio"></a>
