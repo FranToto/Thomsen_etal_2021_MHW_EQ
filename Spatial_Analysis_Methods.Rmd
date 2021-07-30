@@ -45,6 +45,7 @@ library(plotly)
 library(leaflet)
 library(leafem)
 library(leafgl)
+library(rnaturalearth)
 ```
   
   
@@ -500,11 +501,67 @@ paste0(round(length_coastline_impacted/total_length_coastline*100,2),"% of the w
 
 ```
 
-`r round(length_coastline_impacted,1)` km of coastline has been impacted by the 63 extreme Marine Heatwave events.
+`r round(length_coastline_impacted,1)` km of coastline has been impacted by the 63 extreme Marine Heatwave events (using coastline at 1:10 million scale).
 
-`r round(length_coastline_impacted/total_length_coastline*100,2)` % of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ).
+`r round(length_coastline_impacted/total_length_coastline*100,2)` % of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ, using coastline at 1:10 million scale).
 
-And that's pretty much it!
+### Sensitivity of ratio to scale of coastline
+Let's re-calculate the % of coastline impacted by extreme MDW by using a coastline at at different scale, here 1:50 million and 1:110 million from Natural Earth (https://www.naturalearthdata.com/downloads/50m-physical-vectors/50m-coastline/)
+
+```{r, warning=F}
+coastline_50 <- ne_coastline(scale = 50, returnclass = "sf")
+
+intersect_50 <- st_intersection(polys_merged,coastline_50)
+
+length_coast_overlap_50 <- st_length(intersect_50) %>% drop_units() %>% as_tibble()
+length_coast_overlap_tidy_50 <- cbind(eMHW_No=intersect_50$eMHW_No,length_coast_overlap_50) %>% 
+  as_tibble() %>% group_by(eMHW_No) %>% 
+  summarise(Length_Coast_Sum = sum(value)) %>% 
+  mutate(Length_Coast_km = Length_Coast_Sum/1000) %>% 
+  dplyr::select(-2) %>% rename(ID=eMHW_No)
+
+length_coastline_impacted_50 <- length_coast_overlap_tidy_50 %>% summarise(sum(Length_Coast_km))
+
+total_length_coastline_50 <- coastline_50 %>% st_length() %>% 
+  drop_units() %>% #in meters
+  as_tibble() %>% 
+  summarise(sum(value/1000)) #in km
+
+paste0(round(length_coastline_impacted_50/total_length_coastline_50*100,2),"% of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ).")
+
+```
+
+`r round(length_coastline_impacted_50,1)` km of coastline has been impacted by the 63 extreme Marine Heatwave events (using coastline at 1:50 million scale).
+
+`r round(length_coastline_impacted_50/total_length_coastline_50*100,2)` % of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ, using coastline at 1:50 million scale).
+
+```{r, warning=F}
+coastline_110 <- ne_coastline(scale = 110, returnclass = "sf")
+
+intersect_110 <- st_intersection(polys_merged,coastline_110)
+
+length_coast_overlap_110 <- st_length(intersect_110) %>% drop_units() %>% as_tibble()
+length_coast_overlap_tidy_110 <- cbind(eMHW_No=intersect_110$eMHW_No,length_coast_overlap_110) %>% 
+  as_tibble() %>% group_by(eMHW_No) %>% 
+  summarise(Length_Coast_Sum = sum(value)) %>% 
+  mutate(Length_Coast_km = Length_Coast_Sum/1000) %>% 
+  dplyr::select(-2) %>% rename(ID=eMHW_No)
+
+length_coastline_impacted_110 <- length_coast_overlap_tidy_110 %>% summarise(sum(Length_Coast_km))
+
+total_length_coastline_110 <- coastline_110 %>% st_length() %>% 
+  drop_units() %>% #in meters
+  as_tibble() %>% 
+  summarise(sum(value/1000)) #in km
+
+paste0(round(length_coastline_impacted_110/total_length_coastline_110*100,2),"% of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ).")
+
+```
+
+`r round(length_coastline_impacted_110,1)` km of coastline has been impacted by the 63 extreme Marine Heatwave events (using coastline at 1:110 million scale).
+
+`r round(length_coastline_impacted_110/total_length_coastline_110*100,2)` % of the world's coastline has been impacted by the 63 extreme Marine Heatwaves (without removing the overlap around NZ, using coastline at 1:110 million scale).
+
 
 # Task #4 - MHW events data extraction at Oaro and Kaikoura Peninsula <a name="events"></a>
 
@@ -549,6 +606,9 @@ knitr::include_graphics("Lolliplot_KK.png")
 knitr::include_graphics("Lolliplot_OaroGoose.png")
 
 ```
+
+And that's pretty much it!
+
 
 
 # Bibliography <a name="Biblio"></a>
