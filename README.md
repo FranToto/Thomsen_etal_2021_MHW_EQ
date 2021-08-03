@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/387929374.svg)](https://zenodo.org/badge/latestdoi/387929374)
+
 # Thomsen_etal_2021_MHW_EQ
 Methodology in support of Thomsen, et al., 2021, Cascading impacts of earthquakes and extreme heatwaves have destroyed populations of an iconic marine foundation species - submitted to Diversity and Distributions, under review 
 
