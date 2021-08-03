@@ -10,6 +10,7 @@ __AIM__ : Task #1 - Estimate distance to shore for various spatial points (Extre
 Task #2 - To Calculate/estimate attributes for 17-18 NZ MHW using same methodology as @Gupta2020 and @Holbrook2019.
 Task #3 - Calculate the length of coastline embedded in MHW polygons (62 + NZ 17/18 created). Task #4 - MHW events data extraction at Oaro and Kaikoura Peninsula.
 
+Data and .Rmd available at https://github.com/FranToto/Thomsen_etal_2021_MHW_EQ.
 
 # Table of content
 
